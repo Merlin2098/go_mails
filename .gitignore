@@ -1,0 +1,10 @@
+.env.local
+bin/
+data/
+logs/
+
+# Wails
+build/bin
+frontend/dist
+frontend/node_modules
+frontend/wailsjs
