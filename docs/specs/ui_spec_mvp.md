@@ -88,11 +88,12 @@ mismo mecanismo que el tab Enviar (ver §4), para no duplicar dos formas de prog
 
 | Componente | Tipo | Comportamiento |
 |---|---|---|
-| Botón "Probar conexión con Outlook" | Botón secundario | Ejecuta el diagnóstico de Outlook Classic (context.md §6/§20) bajo demanda, no automático al arranque. Muestra OK/error y, si OK, el correo configurado en el perfil de Outlook Desktop detectado — es la única acción de este tab con conexión real a backend en esta iteración (ver Nota de implementación más abajo). |
+| Botón "Probar conexión con Outlook" | Botón secundario | Ejecuta el diagnóstico de Outlook Classic (context.md §6/§20) bajo demanda, no automático al arranque. Muestra OK/error y, si OK, el correo configurado en el perfil de Outlook Desktop detectado. Al tener éxito, dispara automáticamente la carga del selector de cuenta remitente (ver fila siguiente) — es la única acción de este tab con conexión real a backend en esta iteración (ver Nota de implementación más abajo). |
+| Selector de cuenta remitente | Radio group | Lista todas las cuentas configuradas en el perfil local de Outlook Classic (`Namespace.Accounts` vía COM, docs/specs/POC_Outlook_Hotmail_Desktop.md). El usuario debe elegir una explícitamente — la app nunca asume la cuenta por defecto de Outlook. Solo visible cuando la prueba de conexión tuvo éxito. |
 | Selector de carpeta de boletas | Botón "Seleccionar carpeta" | Diálogo nativo de carpeta. Muestra ruta elegida. Es la carpeta que el motor de resolución usa junto al Excel para asociar `DNI → archivo` (docs/specs/docs_enrutamiento.md §5). |
 | Selector de Excel | Botón "Seleccionar Excel" | Diálogo nativo, filtra `.xlsx`. Muestra ruta elegida. |
 | Resumen de validación | Texto/tabla | Tras seleccionar Excel y carpeta: total de registros, válidos, inválidos, con detalle de errores (context.md §11), incluyendo documentos no encontrados en la carpeta seleccionada. |
-| Botón Enviar | Botón primario | Deshabilitado si: no hay Excel cargado, no hay carpeta seleccionada, hay 0 registros válidos, o la prueba de conexión a Outlook no se ha realizado con éxito. |
+| Botón Enviar | Botón primario | Deshabilitado si: no hay Excel cargado, no hay carpeta seleccionada, hay 0 registros válidos, la prueba de conexión a Outlook no se ha realizado con éxito, o no se ha seleccionado una cuenta remitente. |
 | Barra de progreso | Progress bar | Enviados/total, contador de éxitos y fallos, nombre del registro actual — igual que context.md §14. |
 | Botón "Reintentar fallidos" | Botón secundario | Aparece solo cuando el lote terminó con ≥1 fallo. Reenvía únicamente los ítems en estado `FAILED` (context.md §15). |
 | Botón "Generar reporte Excel" | Botón secundario | Aparece cuando el lote terminó (sent o failed, no en progreso). Exporta el resultado del envío a un `.xlsx` vía diálogo "Guardar como". |
@@ -102,6 +103,9 @@ mismo mecanismo que el tab Enviar (ver §4), para no duplicar dos formas de prog
 
 ```text
 Probar conexión Outlook ---> OK (+ correo detectado) / Error
+       |
+       v
+Seleccionar cuenta remitente (lista de cuentas de Outlook Classic)
        |
        v
 Seleccionar carpeta de boletas
@@ -117,7 +121,7 @@ resuelve DNI -> archivo dentro de la carpeta seleccionada
 Resumen: N válidos / M inválidos
        |
        v
-Click "Enviar"  (bloqueado si Outlook no fue validado, falta carpeta/Excel, o 0 válidos)
+Click "Enviar"  (bloqueado si Outlook no fue validado, falta cuenta/carpeta/Excel, o 0 válidos)
        |
        v
 Progreso en tiempo real (enviados, fallidos, actual)
@@ -137,6 +141,8 @@ Fin del lote
 
 ```go
 func (a *App) TestOutlookConnection() (OutlookStatus, error)
+func (a *App) ListOutlookAccounts() ([]OutlookAccount, error)
+func (a *App) SelectOutlookAccount(smtpAddress string)
 func (a *App) SelectDocumentsFolder() (string, error)
 func (a *App) SelectExcel() (string, error)
 func (a *App) ValidateBatch(excelPath string, folderPath string) (BatchValidationSummary, error)
@@ -151,6 +157,11 @@ type OutlookStatus struct {
     Available bool
     Email     string // dirección detectada en el perfil de Outlook Desktop; vacío si Available=false
     Detail    string
+}
+
+type OutlookAccount struct {
+    DisplayName string
+    SmtpAddress string
 }
 
 type BatchValidationSummary struct {
@@ -172,14 +183,22 @@ type ValidationError struct {
 De los bindings de este tab, tienen **implementación real**:
 
 - `TestOutlookConnection` — contra Outlook COM (`app/infrastructure/outlook`).
+- `ListOutlookAccounts` — enumera `Namespace.Accounts` vía COM
+  (`outlook.ListAccounts`), sin asumir ninguna cuenta por defecto
+  (docs/specs/POC_Outlook_Hotmail_Desktop.md). `SelectOutlookAccount` guarda
+  la elección en `App.selectedAccount`, solo en memoria para la sesión
+  actual. `StartBatch`/`RetryFailed` devuelven `errNoAccountSelected` si se
+  llaman antes de que el usuario elija.
 - `SelectDocumentsFolder`, `SelectExcel` — diálogos nativos de Wails (`runtime.OpenDirectoryDialog`/`OpenFileDialog`).
 - `ValidateBatch` — lee el Excel real (`app/infrastructure/excel`, Excelize), resuelve
   documentos por DNI (`app/infrastructure/filesystem`) y aplica las reglas de
   validación (`app/application.ValidateBatch`). El `domain.Batch` resultante queda en
   memoria en `App.currentBatch`, listo para que `StartBatch` lo consuma.
 - `StartBatch`, `CancelBatch` — envío real vía `app/infrastructure/outlook.Adapter`
-  (implementa `domain.MailSender`, crea `MailItem`, adjunta el documento resuelto,
-  `Send()` inmediato). Worker único secuencial (`app/application.RunBatch`,
+  (implementa `domain.MailSender`, crea `MailItem`, selecciona la cuenta remitente
+  vía `MailItem.SendUsingAccount` (resuelta contra `Namespace.Accounts` a partir del
+  `SmtpAddress` elegido por el usuario), adjunta el documento resuelto, `Send()`
+  inmediato). Worker único secuencial (`app/application.RunBatch`,
   context.md §13) corriendo en su propia goroutine con `runtime.LockOSThread()` —
   necesario porque COM es apartment-threaded: `Connect`/`Send`/`Close` deben ocurrir en
   el mismo hilo del sistema operativo, y sin el lock el scheduler de Go puede migrar la

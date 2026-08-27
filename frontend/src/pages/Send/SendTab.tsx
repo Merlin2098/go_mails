@@ -1,6 +1,11 @@
 import { useState } from "react";
 import * as backendApi from "../../services/backendApi";
-import type { BatchProgress, BatchValidationSummary, OutlookStatus } from "../../types/batch";
+import type {
+  BatchProgress,
+  BatchValidationSummary,
+  OutlookAccount,
+  OutlookStatus,
+} from "../../types/batch";
 import ProgressBar from "../../components/ProgressBar";
 
 type SendPhase = "idle" | "sending" | "cancelled" | "finished" | "error";
@@ -8,6 +13,10 @@ type SendPhase = "idle" | "sending" | "cancelled" | "finished" | "error";
 export default function SendTab() {
   const [outlookStatus, setOutlookStatus] = useState<OutlookStatus | null>(null);
   const [testingOutlook, setTestingOutlook] = useState(false);
+
+  const [accounts, setAccounts] = useState<OutlookAccount[] | null>(null);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState("");
 
   const [folderPath, setFolderPath] = useState("");
   const [excelPath, setExcelPath] = useState("");
@@ -25,6 +34,21 @@ export default function SendTab() {
     const status = await backendApi.testOutlookConnection();
     setOutlookStatus(status);
     setTestingOutlook(false);
+    if (status.available) {
+      await loadAccounts();
+    }
+  }
+
+  async function loadAccounts() {
+    setLoadingAccounts(true);
+    const list = await backendApi.listOutlookAccounts();
+    setAccounts(list);
+    setLoadingAccounts(false);
+  }
+
+  async function handleSelectAccount(smtpAddress: string) {
+    setSelectedAccount(smtpAddress);
+    await backendApi.selectOutlookAccount(smtpAddress);
   }
 
   async function handleSelectFolder() {
@@ -95,6 +119,7 @@ export default function SendTab() {
 
   const canSend =
     outlookStatus?.available === true &&
+    selectedAccount !== "" &&
     folderPath !== "" &&
     validation !== null &&
     validation.valid > 0 &&
@@ -118,6 +143,33 @@ export default function SendTab() {
           )}
         </div>
       </section>
+
+      {outlookStatus?.available && (
+        <section className="field-group">
+          <label>Cuenta remitente</label>
+          {loadingAccounts && <p>Cargando cuentas de Outlook...</p>}
+          {!loadingAccounts && accounts !== null && accounts.length === 0 && (
+            <p className="status-error">No se encontraron cuentas configuradas en Outlook.</p>
+          )}
+          {!loadingAccounts && accounts !== null && accounts.length > 0 && (
+            <div className="field-row" role="radiogroup" aria-label="Selecciona cuenta de Outlook">
+              {accounts.map((acc) => (
+                <label key={acc.smtpAddress} className="radio-option">
+                  <input
+                    type="radio"
+                    name="outlook-account"
+                    value={acc.smtpAddress}
+                    checked={selectedAccount === acc.smtpAddress}
+                    disabled={phase === "sending"}
+                    onChange={() => handleSelectAccount(acc.smtpAddress)}
+                  />
+                  {acc.displayName} ({acc.smtpAddress})
+                </label>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="field-group">
         <label>Carpeta de boletas</label>

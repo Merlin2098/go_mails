@@ -6,14 +6,21 @@ import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
   CancelBatch,
   ExportReport,
+  ListOutlookAccounts,
   RetryFailed,
   SelectDocumentsFolder,
   SelectExcel,
+  SelectOutlookAccount,
   StartBatch,
   TestOutlookConnection,
   ValidateBatch,
 } from "../../wailsjs/go/main/App";
-import type { BatchProgress, BatchValidationSummary, OutlookStatus } from "../types/batch";
+import type {
+  BatchProgress,
+  BatchValidationSummary,
+  OutlookAccount,
+  OutlookStatus,
+} from "../types/batch";
 
 export async function testOutlookConnection(): Promise<OutlookStatus> {
   const result = await TestOutlookConnection();
@@ -22,6 +29,21 @@ export async function testOutlookConnection(): Promise<OutlookStatus> {
     email: result.Email,
     detail: result.Detail,
   };
+}
+
+// listOutlookAccounts enumera las cuentas configuradas en el perfil local de
+// Outlook Classic, para que el usuario elija explícitamente cuál usar como
+// remitente — la app nunca asume la cuenta por defecto de Outlook.
+export async function listOutlookAccounts(): Promise<OutlookAccount[]> {
+  const result = await ListOutlookAccounts();
+  return (result ?? []).map((a) => ({
+    displayName: a.DisplayName,
+    smtpAddress: a.SmtpAddress,
+  }));
+}
+
+export async function selectOutlookAccount(smtpAddress: string): Promise<void> {
+  await SelectOutlookAccount(smtpAddress);
 }
 
 export async function selectDocumentsFolder(): Promise<string> {

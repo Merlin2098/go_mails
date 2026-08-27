@@ -31,6 +31,11 @@ export interface OutlookStatus {
   detail: string;
 }
 
+export interface OutlookAccount {
+  displayName: string;
+  smtpAddress: string;
+}
+
 export interface ValidationError {
   row: number;
   field: string;

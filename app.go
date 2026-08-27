@@ -21,6 +21,13 @@ type App struct {
 	log          *slog.Logger
 	currentBatch domain.Batch
 
+	// selectedAccount is the SMTP address of the Outlook account the user
+	// explicitly chose to send from. Empty means no explicit choice was made
+	// yet — the app must never silently fall back to "whichever account
+	// Outlook treats as default" (docs/specs/POC_Outlook_Hotmail_Desktop.md
+	// §3, §6): StartBatch refuses to run until this is set.
+	selectedAccount string
+
 	// sendMu guards cancelSend and sending — StartBatch/CancelBatch are
 	// bindings, callable concurrently from the UI thread's perspective, but
 	// only one batch may run at a time (context.md §13: one Outlook worker).
@@ -61,6 +68,38 @@ func (a *App) TestOutlookConnection() OutlookStatus {
 		Email:     result.Email,
 		Detail:    result.Detail,
 	}
+}
+
+// OutlookAccount is the Wails-bound shape of one account configured in the
+// user's local Outlook Classic profile
+// (docs/specs/POC_Outlook_Hotmail_Desktop.md §5, "Selecciona cuenta de
+// Outlook").
+type OutlookAccount struct {
+	DisplayName string
+	SmtpAddress string
+}
+
+// ListOutlookAccounts enumerates every account configured in Outlook Classic
+// on this machine, so the UI can show an explicit picker instead of the app
+// assuming the first/default configured account is the one to send from.
+func (a *App) ListOutlookAccounts() ([]OutlookAccount, error) {
+	accounts, err := outlook.ListAccounts()
+	if err != nil {
+		a.log.Error("list outlook accounts failed", "error", err)
+		return nil, err
+	}
+	result := make([]OutlookAccount, len(accounts))
+	for i, acc := range accounts {
+		result[i] = OutlookAccount{DisplayName: acc.DisplayName, SmtpAddress: acc.SmtpAddress}
+	}
+	return result, nil
+}
+
+// SelectOutlookAccount records which configured account the user wants to
+// send from. Required before StartBatch/RetryFailed will run.
+func (a *App) SelectOutlookAccount(smtpAddress string) {
+	a.log.Info("outlook account selected", "account", smtpAddress)
+	a.selectedAccount = smtpAddress
 }
 
 // SelectDocumentsFolder opens a native folder picker for the boletas folder
@@ -152,12 +191,17 @@ func (a *App) StartBatch() error {
 		a.sendMu.Unlock()
 		return errBatchAlreadyRunning
 	}
+	if a.selectedAccount == "" {
+		a.sendMu.Unlock()
+		return errNoAccountSelected
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelSend = cancel
 	a.sending = true
+	account := a.selectedAccount
 	a.sendMu.Unlock()
 
-	go a.runBatchWorker(ctx)
+	go a.runBatchWorker(ctx, account)
 	return nil
 }
 
@@ -173,7 +217,7 @@ func (a *App) StartBatch() error {
 // with RPC_E_WRONG_THREAD ("La aplicación llamó a una interfaz que se
 // aplanó para un diferente subproceso") — observed in practice before this
 // fix, logged in logs/app.log.
-func (a *App) runBatchWorker(ctx context.Context) {
+func (a *App) runBatchWorker(ctx context.Context, account string) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -184,9 +228,9 @@ func (a *App) runBatchWorker(ctx context.Context) {
 		a.sendMu.Unlock()
 	}()
 
-	a.log.Info("batch send starting", "total", len(a.currentBatch.Items))
+	a.log.Info("batch send starting", "total", len(a.currentBatch.Items), "account", account)
 
-	adapter, err := outlook.Connect()
+	adapter, err := outlook.Connect(account)
 	if err != nil {
 		a.log.Error("outlook connect failed, batch aborted", "error", err)
 		wailsruntime.EventsEmit(a.ctx, "batch:fatal-error", err.Error())
@@ -237,6 +281,10 @@ func (a *App) RetryFailed() error {
 		a.sendMu.Unlock()
 		return errBatchAlreadyRunning
 	}
+	if a.selectedAccount == "" {
+		a.sendMu.Unlock()
+		return errNoAccountSelected
+	}
 	retried := application.PrepareRetry(&a.currentBatch)
 	if retried == 0 {
 		a.sendMu.Unlock()
@@ -245,10 +293,11 @@ func (a *App) RetryFailed() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancelSend = cancel
 	a.sending = true
+	account := a.selectedAccount
 	a.sendMu.Unlock()
 
 	a.log.Info("retrying failed items", "count", retried)
-	go a.runBatchWorker(ctx)
+	go a.runBatchWorker(ctx, account)
 	return nil
 }
 
@@ -280,3 +329,4 @@ func (a *App) ExportReport() (string, error) {
 
 var errBatchAlreadyRunning = fmt.Errorf("ya hay un lote en proceso de envío")
 var errNothingToRetry = fmt.Errorf("no hay elementos fallidos para reintentar")
+var errNoAccountSelected = fmt.Errorf("selecciona una cuenta de Outlook antes de enviar")
