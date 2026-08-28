@@ -5,19 +5,25 @@
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
   CancelBatch,
+  DisconnectGmailAccount,
   ExportReport,
   ListOutlookAccounts,
+  OpenGmailAppPasswordsPage,
   RetryFailed,
   SelectDocumentsFolder,
   SelectExcel,
+  SelectGmailAccount,
   SelectOutlookAccount,
+  SendTestGmail,
   StartBatch,
+  TestGmailConnection,
   TestOutlookConnection,
   ValidateBatch,
 } from "../../wailsjs/go/main/App";
 import type {
   BatchProgress,
   BatchValidationSummary,
+  GmailStatus,
   OutlookAccount,
   OutlookStatus,
 } from "../types/batch";
@@ -44,6 +50,40 @@ export async function listOutlookAccounts(): Promise<OutlookAccount[]> {
 
 export async function selectOutlookAccount(smtpAddress: string): Promise<void> {
   await SelectOutlookAccount(smtpAddress);
+}
+
+// testGmailConnection valida el correo y la contraseña de aplicación contra
+// el servidor SMTP de Gmail, sin enviar nada — permite mostrar OK/error
+// antes de que el usuario confirme la cuenta como remitente.
+export async function testGmailConnection(
+  email: string,
+  appPassword: string
+): Promise<GmailStatus> {
+  const result = await TestGmailConnection(email, appPassword);
+  return {
+    available: result.Available,
+    email: result.Email,
+    detail: result.Detail,
+  };
+}
+
+export async function selectGmailAccount(email: string, appPassword: string): Promise<void> {
+  await SelectGmailAccount(email, appPassword);
+}
+
+export async function disconnectGmailAccount(): Promise<void> {
+  await DisconnectGmailAccount();
+}
+
+export async function sendTestGmail(to: string): Promise<void> {
+  await SendTestGmail(to);
+}
+
+// openGmailAppPasswordsPage abre la página de Google para generar una
+// contraseña de aplicación en el navegador predeterminado del sistema — no
+// detecta navegadores instalados, solo delega en el sistema operativo.
+export async function openGmailAppPasswordsPage(): Promise<void> {
+  await OpenGmailAppPasswordsPage();
 }
 
 export async function selectDocumentsFolder(): Promise<string> {

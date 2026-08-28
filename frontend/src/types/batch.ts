@@ -36,6 +36,12 @@ export interface OutlookAccount {
   smtpAddress: string;
 }
 
+export interface GmailStatus {
+  available: boolean;
+  email: string;
+  detail: string;
+}
+
 export interface ValidationError {
   row: number;
   field: string;

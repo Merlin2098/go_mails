@@ -96,7 +96,9 @@
   gap: 12px;
 }
 
-.field-row input[type="text"] {
+.field-row input[type="text"],
+.field-row input[type="email"],
+.field-row input[type="password"] {
   flex: 1;
   padding: 8px 10px;
   border-radius: 2px;
@@ -109,6 +111,22 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  color: var(--ol-text-muted);
+  margin: 0;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  color: var(--ol-blue);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .radio-option {

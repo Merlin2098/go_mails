@@ -31,6 +31,15 @@ BoletaMailer is a Windows desktop application for a small business that needs to
 
 The MVP must support approximately **50–500 documents per batch**.
 
+The project now also supports Gmail as a second transport, authenticated via
+SMTP with a Google App Password (no OAuth, no Google Cloud project — see
+`docs/specs/POC_Gmail_Desktop.md`). Gmail imposes an external, non-technical
+daily recipient limit — 500/day on a free personal account, 2,000/day on
+Google Workspace — that sits right at the edge of this MVP's own 500-document
+batch ceiling. This is a real constraint to flag when discussing batch size,
+provider choice, or scaling the send volume: it cannot be solved with code
+alone (see `docs/specs/POC_Gmail_Desktop.md` §9 for the options).
+
 Core capabilities:
 
 - Rename documents from a selected folder.

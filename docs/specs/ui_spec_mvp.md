@@ -88,12 +88,15 @@ mismo mecanismo que el tab Enviar (ver §4), para no duplicar dos formas de prog
 
 | Componente | Tipo | Comportamiento |
 |---|---|---|
-| Botón "Probar conexión con Outlook" | Botón secundario | Ejecuta el diagnóstico de Outlook Classic (context.md §6/§20) bajo demanda, no automático al arranque. Muestra OK/error y, si OK, el correo configurado en el perfil de Outlook Desktop detectado. Al tener éxito, dispara automáticamente la carga del selector de cuenta remitente (ver fila siguiente) — es la única acción de este tab con conexión real a backend en esta iteración (ver Nota de implementación más abajo). |
-| Selector de cuenta remitente | Radio group | Lista todas las cuentas configuradas en el perfil local de Outlook Classic (`Namespace.Accounts` vía COM, docs/specs/POC_Outlook_Hotmail_Desktop.md). El usuario debe elegir una explícitamente — la app nunca asume la cuenta por defecto de Outlook. Solo visible cuando la prueba de conexión tuvo éxito. |
+| Selector de proveedor | Radio group | Elige entre Outlook y Gmail como transporte de envío (docs/specs/POC_Outlook_Hotmail_Desktop.md, docs/specs/POC_Gmail_Desktop.md). Determina qué sección de conexión se muestra debajo. |
+| Botón "Probar conexión con Outlook" | Botón secundario | Visible solo con proveedor Outlook. Ejecuta el diagnóstico de Outlook Classic (context.md §6/§20) bajo demanda, no automático al arranque. Muestra OK/error y, si OK, el correo configurado en el perfil de Outlook Desktop detectado. Al tener éxito, dispara automáticamente la carga del selector de cuenta remitente (ver fila siguiente) — es la única acción de este tab con conexión real a backend en esta iteración (ver Nota de implementación más abajo). |
+| Selector de cuenta remitente (Outlook) | Radio group | Lista todas las cuentas configuradas en el perfil local de Outlook Classic (`Namespace.Accounts` vía COM, docs/specs/POC_Outlook_Hotmail_Desktop.md). El usuario debe elegir una explícitamente — la app nunca asume la cuenta por defecto de Outlook. Solo visible cuando la prueba de conexión tuvo éxito. |
+| Formulario de cuenta Gmail | Campos correo + contraseña de aplicación | Visible solo con proveedor Gmail. `TestGmailConnection` valida las credenciales por SMTP sin enviar nada; al tener éxito, "Conectar" llama `SelectGmailAccount` y la sección pasa a mostrar estado "Conectado" + botón "Desconectar" (docs/specs/POC_Gmail_Desktop.md). |
+| Botón "Enviar prueba" (Gmail) | Botón secundario | Visible tras conectar la cuenta Gmail. Envía un único correo de prueba (`SendTestGmail`) a la dirección indicada, independiente del lote de boletas. |
 | Selector de carpeta de boletas | Botón "Seleccionar carpeta" | Diálogo nativo de carpeta. Muestra ruta elegida. Es la carpeta que el motor de resolución usa junto al Excel para asociar `DNI → archivo` (docs/specs/docs_enrutamiento.md §5). |
 | Selector de Excel | Botón "Seleccionar Excel" | Diálogo nativo, filtra `.xlsx`. Muestra ruta elegida. |
 | Resumen de validación | Texto/tabla | Tras seleccionar Excel y carpeta: total de registros, válidos, inválidos, con detalle de errores (context.md §11), incluyendo documentos no encontrados en la carpeta seleccionada. |
-| Botón Enviar | Botón primario | Deshabilitado si: no hay Excel cargado, no hay carpeta seleccionada, hay 0 registros válidos, la prueba de conexión a Outlook no se ha realizado con éxito, o no se ha seleccionado una cuenta remitente. |
+| Botón Enviar | Botón primario | Deshabilitado si: no hay Excel cargado, no hay carpeta seleccionada, hay 0 registros válidos, o el proveedor seleccionado no tiene una cuenta lista (Outlook validado + cuenta elegida, o Gmail conectado). |
 | Barra de progreso | Progress bar | Enviados/total, contador de éxitos y fallos, nombre del registro actual — igual que context.md §14. |
 | Botón "Reintentar fallidos" | Botón secundario | Aparece solo cuando el lote terminó con ≥1 fallo. Reenvía únicamente los ítems en estado `FAILED` (context.md §15). |
 | Botón "Generar reporte Excel" | Botón secundario | Aparece cuando el lote terminó (sent o failed, no en progreso). Exporta el resultado del envío a un `.xlsx` vía diálogo "Guardar como". |
@@ -143,6 +146,10 @@ Fin del lote
 func (a *App) TestOutlookConnection() (OutlookStatus, error)
 func (a *App) ListOutlookAccounts() ([]OutlookAccount, error)
 func (a *App) SelectOutlookAccount(smtpAddress string)
+func (a *App) TestGmailConnection(email string, appPassword string) (GmailStatus, error)
+func (a *App) SelectGmailAccount(email string, appPassword string)
+func (a *App) DisconnectGmailAccount()
+func (a *App) SendTestGmail(to string) error
 func (a *App) SelectDocumentsFolder() (string, error)
 func (a *App) SelectExcel() (string, error)
 func (a *App) ValidateBatch(excelPath string, folderPath string) (BatchValidationSummary, error)
@@ -162,6 +169,12 @@ type OutlookStatus struct {
 type OutlookAccount struct {
     DisplayName string
     SmtpAddress string
+}
+
+type GmailStatus struct {
+    Available bool
+    Email     string
+    Detail    string
 }
 
 type BatchValidationSummary struct {
@@ -189,22 +202,39 @@ De los bindings de este tab, tienen **implementación real**:
   la elección en `App.selectedAccount`, solo en memoria para la sesión
   actual. `StartBatch`/`RetryFailed` devuelven `errNoAccountSelected` si se
   llaman antes de que el usuario elija.
+- `TestGmailConnection`, `SelectGmailAccount`, `DisconnectGmailAccount`, `SendTestGmail` —
+  autenticación por SMTP (`app/infrastructure/gmail`, `smtp.gmail.com:587` con STARTTLS y
+  una "contraseña de aplicación" de Google en vez de OAuth — ver docs/specs/POC_Gmail_Desktop.md,
+  revisión). `SelectGmailAccount` guarda las credenciales en memoria (`App.gmailEmail`/
+  `gmailAppPassword`, nunca en disco ni en logs) y marca Gmail como proveedor activo.
+  `DisconnectGmailAccount` limpia esas credenciales y, si Gmail era el proveedor activo,
+  vuelve a exigir seleccionar uno antes del próximo envío.
+- Selección de proveedor: `App.activeProvider` (Outlook/Gmail/ninguno) se fija al llamar
+  `SelectOutlookAccount` o `SelectGmailAccount` — no hay un binding "elegir proveedor"
+  aparte, el propio flujo de conexión de cada proveedor lo determina.
+  `StartBatch`/`RetryFailed` devuelven `errNoAccountSelected` si `activeProvider` está
+  vacío.
 - `SelectDocumentsFolder`, `SelectExcel` — diálogos nativos de Wails (`runtime.OpenDirectoryDialog`/`OpenFileDialog`).
 - `ValidateBatch` — lee el Excel real (`app/infrastructure/excel`, Excelize), resuelve
   documentos por DNI (`app/infrastructure/filesystem`) y aplica las reglas de
   validación (`app/application.ValidateBatch`). El `domain.Batch` resultante queda en
   memoria en `App.currentBatch`, listo para que `StartBatch` lo consuma.
-- `StartBatch`, `CancelBatch` — envío real vía `app/infrastructure/outlook.Adapter`
-  (implementa `domain.MailSender`, crea `MailItem`, selecciona la cuenta remitente
-  vía `MailItem.SendUsingAccount` (resuelta contra `Namespace.Accounts` a partir del
-  `SmtpAddress` elegido por el usuario), adjunta el documento resuelto, `Send()`
-  inmediato). Worker único secuencial (`app/application.RunBatch`,
-  context.md §13) corriendo en su propia goroutine con `runtime.LockOSThread()` —
-  necesario porque COM es apartment-threaded: `Connect`/`Send`/`Close` deben ocurrir en
-  el mismo hilo del sistema operativo, y sin el lock el scheduler de Go puede migrar la
-  goroutine entre llamadas (causó `RPC_E_WRONG_THREAD` en la práctica antes del fix).
-  Progreso emitido por el evento Wails `batch:progress`; un error fatal de conexión
-  (Outlook no disponible al iniciar el worker) se emite por `batch:fatal-error`.
+- `StartBatch`, `CancelBatch` — `runBatchWorker` construye el `domain.MailSender` según
+  `activeProvider`:
+  - Outlook: `app/infrastructure/outlook.Adapter` (crea `MailItem`, selecciona la cuenta
+    remitente vía `MailItem.SendUsingAccount`, resuelta contra `Namespace.Accounts` a
+    partir del `SmtpAddress` elegido por el usuario, adjunta el documento resuelto,
+    `Send()` inmediato). Corre con `runtime.LockOSThread()` — necesario porque COM es
+    apartment-threaded: `Connect`/`Send`/`Close` deben ocurrir en el mismo hilo del
+    sistema operativo, y sin el lock el scheduler de Go puede migrar la goroutine entre
+    llamadas (causó `RPC_E_WRONG_THREAD` en la práctica antes del fix).
+  - Gmail: `app/infrastructure/gmail.Adapter` (`net/smtp` sobre `smtp.gmail.com:587`,
+    STARTTLS, autenticado con la contraseña de aplicación). No usa `LockOSThread` — es
+    HTTP/SMTP puro sobre `net/smtp`, sin el apartment-threading que exige COM.
+  Worker único secuencial (`app/application.RunBatch`, context.md §13) corriendo en su
+  propia goroutine para cualquiera de los dos proveedores. Progreso emitido por el
+  evento Wails `batch:progress`; un error fatal de conexión (p. ej. Outlook no
+  disponible al iniciar el worker) se emite por `batch:fatal-error`.
   Cancelación cooperativa: el ítem en curso termina, el resto queda `CANCELLED`.
   Rutas de adjunto que excedan MAX_PATH (260 caracteres) se envuelven con el prefijo
   `\\?\`/`\\?\UNC\` (`app/infrastructure/winpath.ExtendedLengthPrefix`) antes de

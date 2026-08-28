@@ -17,6 +17,14 @@ generar el ejecutable de distribución (§7).
 
 Windows es el único target soportado (Outlook Classic vía COM es Windows-only).
 
+Para probar el envío vía Gmail (`app/infrastructure/gmail`) hace falta además una
+**contraseña de aplicación** de la cuenta Gmail a usar — no la contraseña normal de la
+cuenta. Se genera en `myaccount.google.com/apppasswords` (requiere verificación en dos
+pasos activada); la app tiene un botón "Generar contraseña de aplicación" que abre esa
+página en el navegador predeterminado del sistema. Ver
+[docs/specs/POC_Gmail_Desktop.md §3](specs/POC_Gmail_Desktop.md) para el detalle
+completo del porqué y cómo se usa esa credencial.
+
 ### Instalar el CLI de Wails (una sola vez por máquina)
 
 ```bash
