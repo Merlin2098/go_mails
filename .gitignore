@@ -8,3 +8,15 @@ build/bin
 frontend/dist
 frontend/node_modules
 frontend/wailsjs
+
+# Datos de demo generados (go run ./cmd/demodata)
+/demo/
+
+# Grabador: dependencias, perfil de Chrome con tu sesión de Gmail y video crudo
+node_modules/
+scripts/demo-recorder/.chrome-profile/
+docs/demo/**/.raw/
+
+# Instrucciones personales para asistentes de IA (no se publican)
+AGENTS.md
+CLAUDE.md

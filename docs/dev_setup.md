@@ -17,7 +17,7 @@ generar el ejecutable de distribución (§7).
 
 Windows es el único target soportado (Outlook Classic vía COM es Windows-only).
 
-Para probar el envío vía Gmail (`app/infrastructure/gmail`) hace falta además una
+Para probar el envío vía Gmail (SMTP, `app/infrastructure/smtpmail`) hace falta además una
 **contraseña de aplicación** de la cuenta Gmail a usar — no la contraseña normal de la
 cuenta. Se genera en `myaccount.google.com/apppasswords` (requiere verificación en dos
 pasos activada); la app tiene un botón "Generar contraseña de aplicación" que abre esa
@@ -32,7 +32,7 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
 El binario queda en `$(go env GOPATH)/bin` — asegúrate que esa ruta esté en tu `PATH`.
-En este entorno: `C:\Users\User\go\bin`.
+En Windows suele ser `%USERPROFILE%\go\bin`.
 
 ### Verificar el entorno completo
 

@@ -1,0 +1,15 @@
+{
+  "name": "despacho-demo-recorder",
+  "private": true,
+  "type": "module",
+  "description": "Graba la demo de Despacho con Playwright: screenshots + MP4 en docs/demo",
+  "scripts": {
+    "record": "node record.mjs",
+    "gmail:login": "node record-gmail.mjs --login",
+    "record:gmail": "node record-gmail.mjs"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "playwright": "^1.49.0"
+  }
+}
