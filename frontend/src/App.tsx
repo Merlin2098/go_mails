@@ -1,26 +1,84 @@
-import { useState } from "react";
-import "./App.css";
-import Tabs, { type TabId } from "./components/Tabs";
-import RenameTab from "./pages/Rename/RenameTab";
-import SendTab from "./pages/Send/SendTab";
-import SplashScreen from "./components/SplashScreen";
+import { Icon } from "./components/ui";
+import { STEPS, stepDone, StoreProvider, useStore } from "./state/store";
+import ConnectionStep from "./steps/ConnectionStep";
+import DataStep from "./steps/DataStep";
+import TemplateStep from "./steps/TemplateStep";
+import AttachmentsStep from "./steps/AttachmentsStep";
+import SendStep from "./steps/SendStep";
 
-function App() {
-  const [activeTab, setActiveTab] = useState<TabId>("rename");
-  const [showSplash, setShowSplash] = useState(true);
+const PROVIDER_LABEL: Record<string, string> = {
+  outlook: "Outlook Desktop",
+  smtp: "SMTP",
+  demo: "Modo demo",
+};
 
+function Sidebar() {
+  const { state, dispatch } = useStore();
+  const p = state.provider;
   return (
-    <div id="App">
-      {showSplash && <SplashScreen onFinished={() => setShowSplash(false)} />}
-      <header className="app-header">BoletaMailer</header>
-      <div className="app-body">
-        <Tabs active={activeTab} onChange={setActiveTab} />
-        <main className="app-content">
-          {activeTab === "rename" ? <RenameTab /> : <SendTab />}
-        </main>
+    <nav className="side" aria-label="Pasos">
+      <div className="brand">
+        <span className="brand-mark"><Icon.Send /></span>
+        Despacho
       </div>
-    </div>
+      {STEPS.map((s, i) => {
+        const on = state.step === s.id;
+        const done = !on && stepDone(state, s.id);
+        return (
+          <button
+            key={s.id}
+            className={`step${on ? " on" : ""}${done ? " done" : ""}`}
+            aria-current={on ? "step" : undefined}
+            onClick={() => dispatch({ type: "goto", step: s.id })}
+          >
+            <span className="n">{done ? <Icon.Check /> : i + 1}</span>
+            {s.label}
+          </button>
+        );
+      })}
+      <div className="side-status">
+        {p?.kind ? (
+          <>
+            <strong>{PROVIDER_LABEL[p.kind]}</strong>
+            <span>{p.kind === "demo" ? "Sin envíos reales" : p.account}</span>
+          </>
+        ) : (
+          <>
+            <strong>Sin cuenta conectada</strong>
+            <span>Elige un proveedor para continuar</span>
+          </>
+        )}
+      </div>
+      <div className="side-foot">Go · Wails · React</div>
+    </nav>
   );
 }
 
-export default App;
+function CurrentStep() {
+  const { state } = useStore();
+  switch (state.step) {
+    case "connection":
+      return <ConnectionStep />;
+    case "data":
+      return <DataStep />;
+    case "template":
+      return <TemplateStep />;
+    case "attachments":
+      return <AttachmentsStep />;
+    case "send":
+      return <SendStep />;
+  }
+}
+
+export default function App() {
+  return (
+    <StoreProvider>
+      <div className="shell">
+        <Sidebar />
+        <div className="main">
+          <CurrentStep />
+        </div>
+      </div>
+    </StoreProvider>
+  );
+}

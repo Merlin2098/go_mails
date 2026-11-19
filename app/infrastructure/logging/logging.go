@@ -1,5 +1,5 @@
 // Package logging is the only place that writes to the log file. It never
-// receives boleta contents, salary data, or full email bodies — only
+// receives document contents or full email bodies — only
 // operational metadata (context.md §23-24): batch_id, filename, operation,
 // status, technical error text.
 package logging
@@ -13,7 +13,7 @@ import (
 
 // logDir is "logs" next to the running executable, in both dev and
 // production. This is a deliberate deviation from context.md §17
-// (%LOCALAPPDATA%\BoletaMailer\logs\): keeping logs beside the binary makes
+// (%LOCALAPPDATA%\Despacho\logs\): keeping logs beside the binary makes
 // them easy to find without touching mutable data inside Program Files,
 // which only matters if the .exe is installed there — this MVP is
 // distributed as a loose .exe the user runs from its own folder, not

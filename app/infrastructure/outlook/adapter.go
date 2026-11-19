@@ -3,12 +3,13 @@ package outlook
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	ole "github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
 
-	"boleta-mailer/app/domain"
-	"boleta-mailer/app/infrastructure/winpath"
+	"despacho/app/domain"
+	"despacho/app/infrastructure/winpath"
 )
 
 // olMailItem is the Outlook object type constant for a new email
@@ -22,7 +23,7 @@ const olMailItem = 0
 //
 // Not safe for concurrent use: the batch worker that owns an Adapter must
 // call Send from a single goroutine, matching the "one Outlook worker"
-// decision in docs/boleta_mailer_mvp_context.md §13.
+// decision documented in docs/boleta_mailer_mvp_context.md §13.
 type Adapter struct {
 	app           *ole.IDispatch
 	namespace     *ole.IDispatch
@@ -154,11 +155,21 @@ func (a *Adapter) Send(ctx context.Context, message domain.Message) error {
 	if _, err := oleutil.PutProperty(mailItem, "Subject", message.Subject); err != nil {
 		return fmt.Errorf("no se pudo establecer el asunto: %w", err)
 	}
-	if _, err := oleutil.PutProperty(mailItem, "Body", message.Body); err != nil {
+	if cc := domain.SplitAddresses(message.CC); len(cc) > 0 {
+		// Outlook's own separator for multiple recipients is ";".
+		if _, err := oleutil.PutProperty(mailItem, "CC", strings.Join(cc, "; ")); err != nil {
+			return fmt.Errorf("no se pudo establecer la copia (CC): %w", err)
+		}
+	}
+	bodyProperty := "Body"
+	if message.HTML {
+		bodyProperty = "HTMLBody"
+	}
+	if _, err := oleutil.PutProperty(mailItem, bodyProperty, message.Body); err != nil {
 		return fmt.Errorf("no se pudo establecer el cuerpo: %w", err)
 	}
 
-	if message.AttachmentPath != "" {
+	if len(message.Attachments) > 0 {
 		attachmentsRaw, err := oleutil.GetProperty(mailItem, "Attachments")
 		if err != nil {
 			return fmt.Errorf("no se pudo acceder a los adjuntos: %w", err)
@@ -166,9 +177,10 @@ func (a *Adapter) Send(ctx context.Context, message domain.Message) error {
 		attachments := attachmentsRaw.ToIDispatch()
 		defer attachments.Release()
 
-		attachmentPath := winpath.ExtendedLengthPrefix(message.AttachmentPath)
-		if _, err := oleutil.CallMethod(attachments, "Add", attachmentPath); err != nil {
-			return fmt.Errorf("no se pudo adjuntar el archivo %q: %w", message.AttachmentPath, err)
+		for _, path := range message.Attachments {
+			if _, err := oleutil.CallMethod(attachments, "Add", winpath.ExtendedLengthPrefix(path)); err != nil {
+				return fmt.Errorf("no se pudo adjuntar el archivo %q: %w", path, err)
+			}
 		}
 	}
 

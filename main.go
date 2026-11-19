@@ -7,9 +7,13 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
-	"boleta-mailer/app/infrastructure/logging"
+	"despacho/app/infrastructure/logging"
+	"despacho/internal/desktop"
 )
 
+// The frontend is embedded in the binary. This is why package main lives at
+// the module root and not under cmd/: //go:embed cannot reach paths with "..".
+//
 //go:embed all:frontend/dist
 var assets embed.FS
 
@@ -21,24 +25,21 @@ func main() {
 	}
 	defer closer.Close()
 
-	// Create an instance of the app structure
-	app := NewApp(logger)
+	services := desktop.New(logger)
 
-	// Create application with options
 	err = wails.Run(&options.App{
-		Title:  "boleta-mailer",
-		Width:  1024,
-		Height: 768,
+		Title:     "Despacho",
+		Width:     1280,
+		Height:    820,
+		MinWidth:  1024,
+		MinHeight: 680,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
-		Bind: []interface{}{
-			app,
-		},
+		BackgroundColour: &options.RGBA{R: 244, G: 245, B: 247, A: 1},
+		OnStartup:        services.OnStartup,
+		Bind:             services.Bindings(),
 	})
-
 	if err != nil {
 		println("Error:", err.Error())
 	}

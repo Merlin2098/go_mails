@@ -1,20 +1,21 @@
 package domain
 
-// Batch is the aggregate representing one full send run: the resolved
-// items, the message template applied to all of them, and progress counts
-// derived from item statuses.
+// Batch is one full send run: the validated items plus the template applied
+// to all of them.
 type Batch struct {
 	Items    []BatchItem
-	Template MessageTemplate
+	Template Template
 }
 
 // Summary derives aggregate counts from item statuses — there is no
-// separate mutable counter to keep in sync, avoiding the scattered-booleans
-// problem described in app/domain/batch_item.go.
+// separate mutable counter to keep in sync.
 type Summary struct {
-	Total   int
-	Valid   int
-	Invalid int
+	Total     int
+	Ready     int
+	Invalid   int
+	Sent      int
+	Failed    int
+	Cancelled int
 }
 
 func (b Batch) Summary() Summary {
@@ -23,9 +24,26 @@ func (b Batch) Summary() Summary {
 		switch item.Status {
 		case StatusInvalid:
 			s.Invalid++
-		default:
-			s.Valid++
+		case StatusReady, StatusSending:
+			s.Ready++
+		case StatusSent:
+			s.Sent++
+		case StatusFailed:
+			s.Failed++
+		case StatusCancelled:
+			s.Cancelled++
 		}
 	}
 	return s
+}
+
+// Clone returns a deep-enough copy of the batch for a worker goroutine to
+// mutate freely: the Items slice is new, so writes by the worker can never
+// race with readers of the original (the UI exporting a report, for
+// example). Attachments and Fields are never mutated after validation, so
+// sharing them is safe.
+func (b Batch) Clone() Batch {
+	items := make([]BatchItem, len(b.Items))
+	copy(items, b.Items)
+	return Batch{Items: items, Template: b.Template}
 }
